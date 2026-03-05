@@ -19,8 +19,10 @@ Environment:
         PIPELINE paths (CONFIGPATH, RESOURCEPATH, SUPPORTPATH).
 
 Requirements:
-    - Senzing V4 SDK installed (senzingsdk-poc package)
-    - Python packages: senzing, senzing-core, orjson
+    - Senzing V4 SDK installed (senzingsdk-runtime or senzingsdk-poc)
+    - PYTHONPATH includes /opt/senzing/er/sdk/python
+    - LD_LIBRARY_PATH includes /opt/senzing/er/lib
+    - Python package: orjson (pip install orjson)
 """
 
 import os

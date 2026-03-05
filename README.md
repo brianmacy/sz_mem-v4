@@ -48,23 +48,39 @@ During record ingestion, Senzing may identify entity relationships that need re-
 
 ### 1. Install Senzing V4
 
-Follow the [Senzing V4 Linux Quickstart Guide](https://www.senzing.com/docs/quickstart/quickstart_api) to install the Senzing SDK on your system.
+Follow the [Senzing V4 Linux Quickstart Guide](https://www.senzing.com/docs/quickstart/quickstart_api) to install the Senzing SDK on your system. Either `senzingsdk-runtime` or `senzingsdk-poc` will work.
 
 **Debian/Ubuntu:**
 
 ```bash
-# Add the Senzing repository and install
 sudo apt update
-sudo apt install senzingsdk-poc
+sudo apt install senzingsdk-runtime
 ```
 
 **RHEL/Amazon Linux:**
 
 ```bash
-sudo yum install senzingsdk-poc
+sudo yum install senzingsdk-runtime
 ```
 
-### 2. Create a Senzing Project
+### 2. Set Up the Environment
+
+The Senzing Python SDK and native libraries ship with the `senzingsdk-runtime` package. You must set the following environment variables so Python can find them:
+
+```bash
+export PYTHONPATH=/opt/senzing/er/sdk/python:$PYTHONPATH
+export LD_LIBRARY_PATH=/opt/senzing/er/lib:$LD_LIBRARY_PATH
+```
+
+**Tip:** Add these to your shell profile (`.bashrc`, `.zshrc`, etc.) to avoid setting them every session.
+
+If you installed `senzingsdk-poc` and created a Senzing project, you can alternatively source the project's `setupEnv` script which sets these (and other) variables for you:
+
+```bash
+source ~/senzing_project/setupEnv
+```
+
+### 3. Create a Senzing Project
 
 ```bash
 /opt/senzing/er/bin/sz_create_project ~/senzing_project
@@ -72,19 +88,17 @@ sudo yum install senzingsdk-poc
 
 This creates an isolated Senzing instance with all necessary configuration, resources, and schema files.
 
-### 3. Install Python Dependencies
+### 4. Install Python Dependencies
 
-Requires **Python 3.10+**.
+Requires **Python 3.10+**. The only third-party Python package required is `orjson`:
 
 ```bash
-pip install senzing senzing-core orjson
+pip install orjson
 ```
 
-| Package        | Purpose                                                          |
-| -------------- | ---------------------------------------------------------------- |
-| `senzing`      | Senzing V4 Python SDK interface definitions                      |
-| `senzing-core` | Native Senzing engine bindings (`SzAbstractFactoryCore`)         |
-| `orjson`       | High-performance JSON parsing (significantly faster than `json`) |
+| Package  | Purpose                                                          |
+| -------- | ---------------------------------------------------------------- |
+| `orjson` | High-performance JSON parsing (significantly faster than `json`) |
 
 ## Configuration
 
