@@ -1,2 +1,2 @@
 # Dependencies for sz_mem-v4
-orjson==3.11.8
+orjson==3.11.9
