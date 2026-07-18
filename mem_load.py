@@ -35,18 +35,7 @@ import concurrent.futures
 
 import argparse
 
-import itertools
-
-# Progress is logged every LOG_INTERVAL successfully processed records.
-# Engine statistics are printed every STATS_INTERVAL records.
-LOG_INTERVAL = 1000
-STATS_INTERVAL = 10 * LOG_INTERVAL
-
 from senzing import (
-    SzConfig,
-    SzConfigManager,
-    SzEngine,
-    SzEngineFlags,
     SzError,
     SzRetryableError,
     SzBadInputError,
@@ -54,6 +43,12 @@ from senzing import (
 )
 
 from senzing_core import SzAbstractFactoryCore
+
+
+# Progress is logged every LOG_INTERVAL successfully processed records.
+# Engine statistics are printed every STATS_INTERVAL records.
+LOG_INTERVAL = 1000
+STATS_INTERVAL = 10 * LOG_INTERVAL
 
 
 def progress(status, remaining, total):
@@ -289,7 +284,6 @@ def futures_redo(engine):
         SzError: If a non-retryable engine error occurs.
     """
     success_recs = error_recs = 0
-    redo_paused = False
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
         print(f"Threads: {executor._max_workers}")
@@ -460,7 +454,7 @@ try:
             for line in file:
                 rec = json.loads(line)
                 data_source = rec["DATA_SOURCE"].upper()
-                if not data_source in known_datasources:
+                if data_source not in known_datasources:
                     sz_config.register_data_source(data_source)
                     known_datasources.add(data_source)
                     print(f"Added DATA_SOURCE: {data_source}")
