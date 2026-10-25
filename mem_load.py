@@ -25,25 +25,22 @@ Requirements:
     - Python package: orjson (pip install orjson)
 """
 
-import os
-import sys
-import orjson as json
-import time
-import sqlite3
-from urllib.parse import urlparse
-import concurrent.futures
-
 import argparse
+import concurrent.futures
+import os
+import sqlite3
+import sys
+import time
+from urllib.parse import urlparse
 
+import orjson as json
 from senzing import (
+    SzBadInputError,
     SzError,
     SzRetryableError,
-    SzBadInputError,
     SzUnrecoverableError,
 )
-
 from senzing_core import SzAbstractFactoryCore
-
 
 # Progress is logged every LOG_INTERVAL successfully processed records.
 # Engine statistics are printed every STATS_INTERVAL records.
@@ -197,7 +194,7 @@ def futures_add(engine, file):
         # Pre-fill the thread pool: submit one task per worker thread
         # to start processing immediately at full concurrency.
         futures = {}
-        for i in range(0, executor._max_workers):
+        for i in range(executor._max_workers):
             record = file.readline()
             if record:
                 futures[executor.submit(add_record, engine, record)] = (
@@ -245,12 +242,6 @@ def futures_add(engine, file):
 
                     if success_recs % STATS_INTERVAL == 0:
                         engine_stats(engine)
-                    if success_recs % 100000 == 0:
-                        try:
-                            # cur.execute("PRAGMA optimize")
-                            pass
-                        except BaseException:
-                            pass
                 finally:
                     del futures[f]
 
@@ -289,7 +280,7 @@ def futures_redo(engine):
         print(f"Threads: {executor._max_workers}")
         # Pre-fill the thread pool with redo records.
         futures = {}
-        for i in range(0, executor._max_workers):
+        for i in range(executor._max_workers):
             record = engine.get_redo_record()
             if record:
                 futures[executor.submit(process_redo, engine, record)] = record
@@ -422,93 +413,87 @@ try:
                 continue
             cur.execute(line)
 
-    try:
-        # ---------------------------------------------------------------------
-        # Step 4: Initialize the Senzing SDK via the Abstract Factory
-        # ---------------------------------------------------------------------
-        # SzAbstractFactoryCore creates all Senzing SDK objects configured
-        # for native (in-process) execution. The factory takes:
-        #   - instance_name: identifies this application in logs
-        #   - engine_config_json: the full Senzing configuration
-        #   - verbose_logging: enables detailed Senzing debug output
-        factory = SzAbstractFactoryCore(
-            "mem_load", engine_config_json, verbose_logging=args.debugTrace
-        )
+    # ---------------------------------------------------------------------
+    # Step 4: Initialize the Senzing SDK via the Abstract Factory
+    # ---------------------------------------------------------------------
+    # SzAbstractFactoryCore creates all Senzing SDK objects configured
+    # for native (in-process) execution. The factory takes:
+    #   - instance_name: identifies this application in logs
+    #   - engine_config_json: the full Senzing configuration
+    #   - verbose_logging: enables detailed Senzing debug output
+    factory = SzAbstractFactoryCore(
+        "mem_load", engine_config_json, verbose_logging=args.debugTrace
+    )
 
-        # ---------------------------------------------------------------------
-        # Step 5: Register data sources in the Senzing configuration
-        # ---------------------------------------------------------------------
-        # Before loading records, all DATA_SOURCE values must be registered
-        # in the Senzing configuration. This step:
-        #   1. Creates a config manager to manage Senzing configurations
-        #   2. Creates a new config from the default template
-        #   3. Scans the entire input file to discover all unique DATA_SOURCE
-        #      values
-        #   4. Registers each data source in the configuration
-        #   5. Persists the configuration as the new default
-        sz_configmgr = factory.create_configmanager()
-        sz_config = sz_configmgr.create_config_from_template()
+    # ---------------------------------------------------------------------
+    # Step 5: Register data sources in the Senzing configuration
+    # ---------------------------------------------------------------------
+    # Before loading records, all DATA_SOURCE values must be registered
+    # in the Senzing configuration. This step:
+    #   1. Creates a config manager to manage Senzing configurations
+    #   2. Creates a new config from the default template
+    #   3. Scans the entire input file to discover all unique DATA_SOURCE
+    #      values
+    #   4. Registers each data source in the configuration
+    #   5. Persists the configuration as the new default
+    sz_configmgr = factory.create_configmanager()
+    sz_config = sz_configmgr.create_config_from_template()
 
-        with open(args.fileToProcess, "r") as file:
-            known_datasources = set()
-            for line in file:
-                rec = json.loads(line)
-                data_source = rec["DATA_SOURCE"].upper()
-                if data_source not in known_datasources:
-                    sz_config.register_data_source(data_source)
-                    known_datasources.add(data_source)
-                    print(f"Added DATA_SOURCE: {data_source}")
+    with open(args.fileToProcess, "r") as file:
+        known_datasources = set()
+        for line in file:
+            rec = json.loads(line)
+            data_source = rec["DATA_SOURCE"].upper()
+            if data_source not in known_datasources:
+                sz_config.register_data_source(data_source)
+                known_datasources.add(data_source)
+                print(f"Added DATA_SOURCE: {data_source}")
 
-        # Persist new default config to Senzing Repository
-        try:
-            config_id = sz_configmgr.set_default_config(
-                sz_config.export(), "New default configuration added."
-            )
-        except SzError:
-            raise
+    # Persist new default config to Senzing Repository
+    config_id = sz_configmgr.set_default_config(
+        sz_config.export(), "New default configuration added."
+    )
 
-        # ---------------------------------------------------------------------
-        # Step 6: Load records and perform entity resolution
-        # ---------------------------------------------------------------------
-        # Create the Senzing engine and process all records from the input
-        # file using multithreaded ingestion. Each record is parsed, and its
-        # DATA_SOURCE + RECORD_ID are used to add it to the engine, which
-        # performs real-time entity resolution as records are added.
-        sz_engine = factory.create_engine()
+    # ---------------------------------------------------------------------
+    # Step 6: Load records and perform entity resolution
+    # ---------------------------------------------------------------------
+    # Create the Senzing engine and process all records from the input
+    # file using multithreaded ingestion. Each record is parsed, and its
+    # DATA_SOURCE + RECORD_ID are used to add it to the engine, which
+    # performs real-time entity resolution as records are added.
+    sz_engine = factory.create_engine()
 
-        with open(args.fileToProcess, "r") as file:
-            futures_add(sz_engine, file)
+    with open(args.fileToProcess, "r") as file:
+        futures_add(sz_engine, file)
 
-        # ---------------------------------------------------------------------
-        # Step 7: Process redo records
-        # ---------------------------------------------------------------------
-        # During ingestion, the engine may have created redo records — deferred
-        # entity re-evaluations. For example, adding record C might reveal that
-        # previously separate entities A and B should now be merged. Processing
-        # redos ensures all entity relationships are fully resolved.
-        print(f"Redo created: {sz_engine.count_redo_records()}")
-        futures_redo(sz_engine)
+    # ---------------------------------------------------------------------
+    # Step 7: Process redo records
+    # ---------------------------------------------------------------------
+    # During ingestion, the engine may have created redo records — deferred
+    # entity re-evaluations. For example, adding record C might reveal that
+    # previously separate entities A and B should now be merged. Processing
+    # redos ensures all entity relationships are fully resolved.
+    print(f"Redo created: {sz_engine.count_redo_records()}")
+    futures_redo(sz_engine)
 
-        # ---------------------------------------------------------------------
-        # Step 8: Backup the in-memory database to disk
-        # ---------------------------------------------------------------------
-        # Copy the complete in-memory Senzing datastore to a persistent SQLite
-        # file (backup.db). The backup uses WAL journal mode for better
-        # concurrent read performance on the output file.
-        #
-        # The pages parameter (10000) controls how many pages are copied per
-        # batch, with the progress callback reporting after each batch.
-        dst = sqlite3.connect("backup.db")
-        dst_cur = dst.cursor()
-        dst_cur.execute("pragma journal_mode = WAL")
-        dst_cur.close()
-        with dst:
-            conn.backup(dst, pages=10000, progress=progress)
-        dst.close()
-        conn.close()
+    # ---------------------------------------------------------------------
+    # Step 8: Backup the in-memory database to disk
+    # ---------------------------------------------------------------------
+    # Copy the complete in-memory Senzing datastore to a persistent SQLite
+    # file (backup.db). The backup uses WAL journal mode for better
+    # concurrent read performance on the output file.
+    #
+    # The pages parameter (10000) controls how many pages are copied per
+    # batch, with the progress callback reporting after each batch.
+    dst = sqlite3.connect("backup.db")
+    dst_cur = dst.cursor()
+    dst_cur.execute("pragma journal_mode = WAL")
+    dst_cur.close()
+    with dst:
+        conn.backup(dst, pages=10000, progress=progress)
+    dst.close()
+    conn.close()
 
-    except SzError:
-        raise
 
 except SzError as err:
     print(err)
